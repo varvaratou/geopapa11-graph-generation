@@ -1,5 +1,9 @@
 from train import *
 
+"""This is the main script where everything is called
+
+author: geopapa (07/25/2022)
+"""
 if __name__ == '__main__':
     # All necessary arguments are defined in args.py
     args = Args()
