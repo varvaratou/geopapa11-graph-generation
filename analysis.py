@@ -1,5 +1,10 @@
 # this file is used to plot images
-from main import *
+# from main import *
+import numpy as np
+from args import Args
+from random import shuffle
+from utils import draw_graph_list, load_graph_list
+
 
 args = Args()
 print(args.graph_type, args.note)
@@ -93,11 +98,11 @@ for num_layers in range(4, 5):
     #     draw_graph_list(graph_list, row=4, col=4, fname=figname + '_' + str(iter))
 
     # draw all graphs
-    for iter in range(8):
-        print('iter', iter)
+    for it in range(8):
+        print('iter', it)
         graph_list = []
         for i in range(8):
-            index = 32 * iter + i
+            index = 32 * it + i
             # graph_real_list[index].remove_nodes_from(list(nx.isolates(graph_real_list[index])))
             # graph_pred_list[index].remove_nodes_from(list(nx.isolates(graph_pred_list[index])))
             # graph_list.append(graph_real_list[index])
@@ -105,14 +110,14 @@ for num_layers in range(4, 5):
             # print('real', graph_real_list[index].number_of_nodes())
             print('pred', graph_pred_list[index].number_of_nodes())
 
-        draw_graph_list(graph_list, row=4, col=4, fname=figname + '_' + str(iter) + '_pred')
+        draw_graph_list(graph_list, row=4, col=4, fname=figname + '_' + str(it) + '_pred')
 
     # draw all graphs
-    for iter in range(8):
-        print('iter', iter)
+    for it in range(8):
+        print('iter', it)
         graph_list = []
         for i in range(8):
-            index = 16 * iter + i
+            index = 16 * it + i
             # graph_real_list[index].remove_nodes_from(list(nx.isolates(graph_real_list[index])))
             # graph_pred_list[index].remove_nodes_from(list(nx.isolates(graph_pred_list[index])))
             graph_list.append(graph_real_list[index])
@@ -120,7 +125,7 @@ for num_layers in range(4, 5):
             print('real', graph_real_list[index].number_of_nodes())
             # print('pred', graph_pred_list[index].number_of_nodes())
 
-        draw_graph_list(graph_list, row=4, col=4, fname=figname + '_' + str(iter) + '_real')
+        draw_graph_list(graph_list, row=4, col=4, fname=figname + '_' + str(it) + '_real')
 
 
 # # for new model
@@ -128,21 +133,21 @@ for num_layers in range(4, 5):
 #     for num_layers in range(4,5):
 #         # give file name and figure name
 #         # fname_real = args.graph_save_path + args.note + '_' + args.graph_type + '_' + str(args.graph_node_num) + '_' + \
-#         #                     str(epoch) + '_real_bptt_' + str(args.bptt)+'_'+ str(num_layers)+'_dilation_'+ \
+#         #                     str(epoch) + '_real_bpt_' + str(args.bpt)+'_'+ str(num_layers)+'_dilation_'+ \
 #         #                     str(args.is_dilation)+'_flexible_'+str(args.is_flexible)+'_bn_'+str(args.is_bn)+'_lr_'+str(args.lr)
 #         # fname_pred = args.graph_save_path + args.note + '_' + args.graph_type + '_' + str(args.graph_node_num) + '_' + \
-#         #                     str(epoch) + '_pred_bptt_' + str(args.bptt)+'_'+str(num_layers)+'_dilation_'+ \
+#         #                     str(epoch) + '_pred_bpt_' + str(args.bpt)+'_'+str(num_layers)+'_dilation_'+ \
 #         #                     str(args.is_dilation)+'_flexible_'+str(args.is_flexible)+'_bn_'+str(args.is_bn)+'_lr_'+str(args.lr)
 #
 #         fname_pred = args.graph_save_path + args.note + '_' + args.graph_type + '_' + \
-#                      str(epoch) + '_pred_' + str(args.num_layers) + '_' + str(args.bptt)+ \
-#                      '_' + str(args.bptt_len) + '_' + str(args.hidden_size)
+#                      str(epoch) + '_pred_' + str(args.num_layers) + '_' + str(args.bpt)+ \
+#                      '_' + str(args.bpt_len) + '_' + str(args.hidden_size)
 #         fname_real = args.graph_save_path + args.note + '_' + args.graph_type + '_' + \
-#                      str(epoch) + '_real_' + str(args.num_layers) + '_' + str(args.bptt)+ \
-#                      '_' + str(args.bptt_len) + '_' + str(args.hidden_size)
+#                      str(epoch) + '_real_' + str(args.num_layers) + '_' + str(args.bpt)+ \
+#                      '_' + str(args.bpt_len) + '_' + str(args.hidden_size)
 #         figname = args.figure_save_path + args.note + '_' + args.graph_type + '_' + \
-#                      str(epoch) + '_pred_' + str(args.num_layers) + '_' + str(args.bptt)+ \
-#                   '_' + str(args.bptt_len) + '_' + str(args.hidden_size)
+#                      str(epoch) + '_pred_' + str(args.num_layers) + '_' + str(args.bpt)+ \
+#                   '_' + str(args.bpt_len) + '_' + str(args.hidden_size)
 #         print(fname_real)
 #         # load data
 #         graph_real_list = load_graph_list(fname_real+'.dat')
@@ -190,11 +195,11 @@ for num_layers in range(4, 5):
 #         for epoch in [epoch_end-500*(8-i) for i in range(8)]:
 #             # give file name and figure name
 #             fname_real = args.graph_save_path + args.note + '_' + args.graph_type + '_' + str(args.graph_node_num) + '_' + \
-#                                  str(epoch) + '_real_bptt_' + str(args.bptt)+'_'+str(num_layers) \
+#                                  str(epoch) + '_real_bpt_' + str(args.bpt)+'_'+str(num_layers) \
 #                          + '_dilation_'+ str(args.is_dilation)+'_flexible_'+str(args.is_flexible)+'_bn_'+ \
 #                          str(args.is_bn)+'_lr_'+str(args.lr)
 #             fname_pred = args.graph_save_path + args.note + '_' + args.graph_type + '_' + str(args.graph_node_num) + '_' + \
-#                                  str(epoch) + '_pred_bptt_' + str(args.bptt)+'_'+str(num_layers) + '_dilation_'+ \
+#                                  str(epoch) + '_pred_bpt_' + str(args.bpt)+'_'+str(num_layers) + '_dilation_'+ \
 #                          str(args.is_dilation)+'_flexible_'+str(args.is_flexible)+'_bn_'+str(args.is_bn)+'_lr_'+str(args.lr)
 #
 #             # load data
