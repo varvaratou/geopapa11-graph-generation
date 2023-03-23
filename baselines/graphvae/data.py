@@ -2,6 +2,7 @@ import networkx as nx
 import numpy as np
 import torch
 
+
 class GraphAdjSampler(torch.utils.data.Dataset):
     def __init__(self, G_list, max_num_nodes, features='id'):
         self.max_num_nodes = max_num_nodes
@@ -19,19 +20,13 @@ class GraphAdjSampler(torch.utils.data.Dataset):
                 self.feature_all.append(np.identity(max_num_nodes))
             elif features == 'deg':
                 degs = np.sum(np.array(adj), 1)
-                degs = np.expand_dims(np.pad(degs, [0, max_num_nodes - G.number_of_nodes()], 0),
-                                      axis=1)
+                degs = np.expand_dims(np.pad(degs, [0, max_num_nodes - G.number_of_nodes()], 0), axis=1)
                 self.feature_all.append(degs)
             elif features == 'struct':
                 degs = np.sum(np.array(adj), 1)
-                degs = np.expand_dims(np.pad(degs, [0, max_num_nodes - G.number_of_nodes()],
-                                             'constant'),
-                                      axis=1)
+                degs = np.expand_dims(np.pad(degs, [0, max_num_nodes - G.number_of_nodes()], 'constant'), axis=1)
                 clusterings = np.array(list(nx.clustering(G).values()))
-                clusterings = np.expand_dims(np.pad(clusterings, 
-                                                    [0, max_num_nodes - G.number_of_nodes()],
-                                                    'constant'),
-                                             axis=1)
+                clusterings = np.expand_dims(np.pad(clusterings, [0, max_num_nodes - G.number_of_nodes()], 'constant'), axis=1)
                 self.feature_all.append(np.hstack([degs, clusterings]))
 
     def __len__(self):
@@ -46,13 +41,10 @@ class GraphAdjSampler(torch.utils.data.Dataset):
         adj_decoded = np.zeros(self.max_num_nodes * (self.max_num_nodes + 1) // 2)
         node_idx = 0
         
-        adj_vectorized = adj_padded[np.triu(np.ones((self.max_num_nodes,self.max_num_nodes)) ) == 1]
+        adj_vectorized = adj_padded[np.triu(np.ones((self.max_num_nodes, self.max_num_nodes))) == 1]
         # the following 2 lines recover the upper triangle of the adj matrix
-        #recovered = np.zeros((self.max_num_nodes, self.max_num_nodes))
-        #recovered[np.triu(np.ones((self.max_num_nodes, self.max_num_nodes)) ) == 1] = adj_vectorized
-        #print(recovered)
+        # recovered = np.zeros((self.max_num_nodes, self.max_num_nodes))
+        # recovered[np.triu(np.ones((self.max_num_nodes, self.max_num_nodes)) ) == 1] = adj_vectorized
+        # print(recovered)
         
-        return {'adj':adj_padded,
-                'adj_decoded':adj_vectorized, 
-                'features':self.feature_all[idx].copy()}
-
+        return {'adj': adj_padded, 'adj_decoded': adj_vectorized, 'features': self.feature_all[idx].copy()}
