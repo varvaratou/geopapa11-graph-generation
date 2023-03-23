@@ -1,7 +1,11 @@
-from main import *
-from scipy.linalg import toeplitz
+import networkx as nx
+import numpy as np
 import pyemd
-import scipy.optimize as opt
+from scipy.linalg import toeplitz
+
+from args import Args
+from data import graph_load_batch
+from utils import save_graph_list
 
 
 def Graph_generator_baseline_train_rulebased(graphs, generator='BA'):
@@ -172,7 +176,7 @@ def Graph_generator_baseline_train_optimizationbased(graphs, generator='BA', met
         elif generator == 'Gnp':
             n = nodes
             p = optimizer_brute(1e-6, 1, 0.01, nodes, graphs[i], generator, metric)
-            ## if use evolution
+            # if use evolution
             # result = opt.differential_evolution(Loss,bounds=[(0,1)],args=(nodes, graphs[i], generator, metric),maxiter=1000)
             # p = result.x
             parameter_temp = [n, p, 1]
@@ -212,7 +216,7 @@ if __name__ == '__main__':
     args = Args()
 
     print('File name prefix', args.fname)
-    ### load datasets
+    # load datasets
     graphs = []
     # synthetic graphs
     if args.graph_type == 'ladder':
@@ -245,13 +249,13 @@ if __name__ == '__main__':
         args.max_prev_node = 130
     # real graphs
     if args.graph_type == 'enzymes':
-        graphs = Graph_load_batch(min_num_nodes=10, name='ENZYMES')
+        graphs = graph_load_batch(min_num_nodes=10, name='ENZYMES')
         args.max_prev_node = 25
     if args.graph_type == 'protein':
-        graphs = Graph_load_batch(min_num_nodes=20, name='PROTEINS_full')
+        graphs = graph_load_batch(min_num_nodes=20, name='PROTEINS_full')
         args.max_prev_node = 80
     if args.graph_type == 'DD':
-        graphs = Graph_load_batch(min_num_nodes=100, max_num_nodes=500, name='DD', node_attributes=False, graph_labels=True)
+        graphs = graph_load_batch(min_num_nodes=100, max_num_nodes=500, name='DD', node_attributes=False, graph_labels=True)
         args.max_prev_node = 230
 
     graph_nodes = [graphs[i].number_of_nodes() for i in range(len(graphs))]
