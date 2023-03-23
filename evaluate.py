@@ -1,9 +1,16 @@
 import argparse
+import logging
+import networkx as nx
+import numpy as np
+import os
+import re
+from random import shuffle
+from time import gmtime, strftime
 
 import eval.stats
-import utils
-# import main.Args
-from baselines.baseline_simple import *
+from args import Args
+from baselines.baseline_simple import Graph_generator_baseline
+from utils import caveman_special, citeseer_ego, export_graphs_to_txt, load_graph_list, perturb, save_graph_list, snap_txt_output_to_nx
 
 
 class Args_evaluate:
@@ -72,8 +79,8 @@ def eval_list(real_graphs_filename, pred_graphs_filename, prefix, eval_every):
     
     for result_id in real_graphs_dict.keys():
         for epochs in sorted(real_graphs_dict[result_id]):
-            real_g_list = utils.load_graph_list(real_graphs_dict[result_id][epochs])
-            pred_g_list = utils.load_graph_list(pred_graphs_dict[result_id][epochs])
+            real_g_list = load_graph_list(real_graphs_dict[result_id][epochs])
+            pred_g_list = load_graph_list(pred_graphs_dict[result_id][epochs])
             shuffle(real_g_list)
             shuffle(pred_g_list)
             perturbed_g_list = perturb(real_g_list, 0.05)
@@ -134,7 +141,7 @@ def load_ground_truth(dir_input, dataset_name, model_name='GraphRNN_RNN'):
         fname_test = dir_input + model_name + '_' + dataset_name + '_' + str(args.num_layers) + '_' + str(
                 hidden) + '_test_' + str(0) + '.dat'
     try:
-        graph_test = utils.load_graph_list(fname_test, is_real=True)
+        graph_test = load_graph_list(fname_test, is_real=True)
     except:
         print('Not found: ' + fname_test)
         logging.warning('Not found: ' + fname_test)
@@ -162,12 +169,12 @@ def eval_single_list(graphs, dir_input, dataset_name):
     print('orbits: ', mmd_4orbits)
 
 
-def evaluation_epoch(dir_input, fname_output, model_name, dataset_name, args, is_clean=True,
+def evaluation_epoch(dir_input, fname_output, model_name, dataset_name, arguments, is_clean=True,
                      epoch_start=1000, epoch_end=3001, epoch_step=100):
     with open(fname_output, 'w+') as f:
         f.write('sample_time,epoch,degree_validate,clustering_validate,orbits4_validate,degree_test,clustering_test,orbits4_test\n')
 
-        # TODO: Maybe refactor into a separate file/function that specifies THE naming convention
+        # TODO: Maybe refactor into a separate file/function that specifies the naming convention
         # across main and evaluate
         if 'small' not in dataset_name:
             hidden = 128
@@ -175,15 +182,15 @@ def evaluation_epoch(dir_input, fname_output, model_name, dataset_name, args, is
             hidden = 64
         # read real graph
         if model_name == 'Internal' or model_name == 'Noise' or model_name == 'B-A' or model_name == 'E-R':
-            fname_test = dir_input + 'GraphRNN_MLP' + '_' + dataset_name + '_' + str(args.num_layers) + '_' + str(
+            fname_test = dir_input + 'GraphRNN_MLP' + '_' + dataset_name + '_' + str(arguments.num_layers) + '_' + str(
                 hidden) + '_test_' + str(0) + '.dat'
         elif 'Baseline' in model_name:
             fname_test = dir_input + model_name + '_' + dataset_name + '_' + str(64) + '_test_' + str(0) + '.dat'
         else:
-            fname_test = dir_input + model_name + '_' + dataset_name + '_' + str(args.num_layers) + '_' + str(
+            fname_test = dir_input + model_name + '_' + dataset_name + '_' + str(arguments.num_layers) + '_' + str(
                 hidden) + '_test_' + str(0) + '.dat'
         try:
-            graph_test = utils.load_graph_list(fname_test, is_real=True)
+            graph_test = load_graph_list(fname_test, is_real=True)
         except:
             print('Not found: ' + fname_test)
             logging.warning('Not found: ' + fname_test)
@@ -206,11 +213,11 @@ def evaluation_epoch(dir_input, fname_output, model_name, dataset_name, args, is
             for epoch in range(epoch_start, epoch_end, epoch_step):
                 for sample_time in range(1, 4):
                     # get filename
-                    fname_pred = dir_input + model_name + '_' + dataset_name + '_' + str(args.num_layers) + '_' + str(hidden) + '_pred_' \
-                                 + str(epoch) + '_' + str(sample_time) + '.dat'
+                    fname_pred = dir_input + model_name + '_' + dataset_name + '_' + str(arguments.num_layers) + '_' + str(hidden) + \
+                                 '_pred_' + str(epoch) + '_' + str(sample_time) + '.dat'
                     # load graphs
                     try:
-                        graph_pred = utils.load_graph_list(fname_pred, is_real=False)  # default False
+                        graph_pred = load_graph_list(fname_pred, is_real=False)  # default False
                     except:
                         print('Not found: ' + fname_pred)
                         logging.warning('Not found: ' + fname_pred)
@@ -324,7 +331,7 @@ def evaluation_epoch(dir_input, fname_output, model_name, dataset_name, args, is
                     64) + '_pred_' + str(epoch) + '.dat'
                 # load graphs
                 try:
-                    graph_pred = utils.load_graph_list(fname_pred, is_real=True)  # default False
+                    graph_pred = load_graph_list(fname_pred, is_real=True)  # default False
                 except:
                     print('Not found: ' + fname_pred)
                     logging.warning('Not found: ' + fname_pred)
@@ -385,8 +392,7 @@ def evaluation(args_evaluate, dir_input, dir_output, model_name_all, dataset_nam
                              epoch_end=args_evaluate.epoch_end, epoch_step=args_evaluate.epoch_step)
 
 
-def eval_list_fname(real_graph_filename, pred_graphs_filename, baselines,
-        eval_every, epoch_range=None, out_file_prefix=None):
+def eval_list_fname(real_graph_filename, pred_graphs_filename, baselines, eval_every, epoch_range=None, out_file_prefix=None):
     """Evaluate list of predicted graphs compared to ground truth, stored in files.
     Args:
         baselines: dict mapping name of the baseline to list of generated graphs.
@@ -427,11 +433,11 @@ def eval_list_fname(real_graph_filename, pred_graphs_filename, baselines,
     if epoch_range is None:
         epoch_range = [i * eval_every for i in range(num_evals)] 
     for i in range(num_evals):
-        real_g_list = utils.load_graph_list(real_graph_filename)
-        # pred_g_list = utils.load_graph_list(pred_graphs_filename[i])
+        real_g_list = load_graph_list(real_graph_filename)
+        # pred_g_list = load_graph_list(pred_graphs_filename[i])
 
         # contains all predicted G
-        pred_g_list_raw = utils.load_graph_list(pred_graphs_filename[i])
+        pred_g_list_raw = load_graph_list(pred_graphs_filename[i])
         if len(real_g_list) > 200:
             real_g_list = real_g_list[0:200]
 
@@ -552,12 +558,13 @@ def eval_performance(datadir, prefix=None, args=None, eval_every=200, out_file_p
     else:
         # # for vanilla graphrnn
         # real_graphs_filename = [datadir + args.graph_save_path + args.note + '_' + args.graph_type + '_' + \
-        #              str(epoch) + '_pred_' + str(args.num_layers) + '_' + str(args.bptt) + '_' + str(args.bptt_len) + '.dat' for epoch in range(0,50001,eval_every)]
+        #              str(epoch) + '_pred_' + str(args.num_layers) + '_' + str(args.bptt) + '_' + str(args.bptt_len) +
+        #              '.dat' for epoch in range(0,50001,eval_every)]
         # pred_graphs_filename = [datadir + args.graph_save_path + args.note + '_' + args.graph_type + '_' + \
         #          str(epoch) + '_real_' + str(args.num_layers) + '_' + str(args.bptt) + '_' + str(args.bptt_len) +
         # '.dat' for epoch in range(0,50001,eval_every)]
         
-        real_graph_filename = datadir+args.graph_save_path + args.fname_test + '0.dat'
+        real_graph_filename = datadir + args.graph_save_path + args.fname_test + '0.dat'
         # for proposed model
         end_epoch = 3001
         epoch_range = range(eval_every, end_epoch, eval_every)
@@ -585,10 +592,10 @@ def process_kron(kron_dir):
         if filename.endswith('.txt'):
             txt_files.append(filename)
         elif filename.endswith('.dat'):
-            return utils.load_graph_list(os.path.join(kron_dir, filename))
+            return load_graph_list(os.path.join(kron_dir, filename))
     G_list = []
     for filename in txt_files:
-        G_list.append(utils.snap_txt_output_to_nx(os.path.join(kron_dir, filename)))
+        G_list.append(snap_txt_output_to_nx(os.path.join(kron_dir, filename)))
 
     return G_list
  
@@ -604,11 +611,11 @@ if __name__ == '__main__':
     feature_parser.add_argument('--kron-dir', dest='kron_dir', help='Directory where graphs generated by kronecker method is stored.')
 
     parser.add_argument('--testfile', dest='test_file',
-                        help='The file that stores list of graphs to be evaluated. '
-                             'Only used when 1 list of graphs is to be evaluated.')
+                        help='The file that stores list of graphs to be evaluated. Only used when 1 list of graphs is to be evaluated.')
     parser.add_argument('--dir-prefix', dest='dir_prefix',
                         help='The file that stores list of graphs to be evaluated. '
                              'Can be used when evaluating multiple models on multiple datasets.')
+    parser.add_argument('--real-graph-filename', dest='real_graph_filename', help='The name of the real graph.')
     parser.add_argument('--graph-type', dest='graph_type', help='Type of graphs / dataset.')
     
     parser.set_defaults(export=False, kron_dir='', test_file='', dir_prefix='', graph_type=args.graph_type)
@@ -617,6 +624,7 @@ if __name__ == '__main__':
     # dir_prefix = prog_args.dir_prefix
     # dir_prefix = "/dfs/scratch0/jiaxuany0/"
     dir_prefix = args.dir_input
+    real_graph_filename = args.real_graph_filename
 
     time_now = strftime("%Y-%m-%d %H:%M:%S", gmtime())
     if not os.path.isdir('logs/'):
@@ -639,34 +647,34 @@ if __name__ == '__main__':
             for i in range(10, 20):
                 for j in range(10, 20):
                     graphs.append(nx.grid_2d_graph(i, j))
-            utils.export_graphs_to_txt(graphs, output_prefix)
+            export_graphs_to_txt(graphs, output_prefix)
         elif prog_args.graph_type == 'caveman':
             graphs = []
             for i in range(2, 3):
                 for j in range(30, 81):
                     for k in range(10):
                         graphs.append(caveman_special(i, j, p_edge=0.3))
-            utils.export_graphs_to_txt(graphs, output_prefix)
+            export_graphs_to_txt(graphs, output_prefix)
         elif prog_args.graph_type == 'citeseer':
-            graphs = utils.citeseer_ego()
-            utils.export_graphs_to_txt(graphs, output_prefix)
+            graphs = citeseer_ego()
+            export_graphs_to_txt(graphs, output_prefix)
         else:
             # load from directory
             input_path = dir_prefix + real_graph_filename
-            g_list = utils.load_graph_list(input_path)
-            utils.export_graphs_to_txt(g_list, output_prefix)
+            g_list = load_graph_list(input_path)
+            export_graphs_to_txt(g_list, output_prefix)
     elif not prog_args.kron_dir == '':
         kron_g_list = process_kron(prog_args.kron_dir)
         fname = os.path.join(prog_args.kron_dir, prog_args.graph_type + '.dat')
         print([g.number_of_nodes() for g in kron_g_list])
-        utils.save_graph_list(kron_g_list, fname)
+        save_graph_list(kron_g_list, fname)
     elif not prog_args.test_file == '':
         # evaluate single .dat file containing list of test graphs (networkx format)
-        graphs = utils.load_graph_list(prog_args.test_file)
+        graphs = load_graph_list(prog_args.test_file)
         eval_single_list(graphs, dir_input=dir_prefix+'graphs/', dataset_name='grid')
     # if you don't try kronecker, only the following part is needed
     else:
-        if not os.path.isdir(dir_prefix+'eval_results'):
-            os.makedirs(dir_prefix+'eval_results')
-        evaluation(args_evaluate, dir_input=dir_prefix+"graphs/", dir_output=dir_prefix+"eval_results/",
+        if not os.path.isdir(dir_prefix + 'eval_results'):
+            os.makedirs(dir_prefix + 'eval_results')
+        evaluation(args_evaluate, dir_input=dir_prefix + 'graphs/', dir_output=dir_prefix+"eval_results/",
                    model_name_all=args_evaluate.model_name_all, dataset_name_all=args_evaluate.dataset_name_all, args=args, overwrite=True)

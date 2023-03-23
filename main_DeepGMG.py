@@ -1,5 +1,19 @@
 # an implementation for "Learning Deep Generative Models of Graphs"
-from main import *
+import networkx as nx
+import numpy as np
+import os
+import random
+from random import shuffle
+import time as tm
+import torch
+from torch.autograd import Variable
+import torch.nn.functional as F
+from torch import optim
+from torch.optim.lr_scheduler import MultiStepLR
+
+from data import graph_load, graph_load_batch
+from model import calc_graph_embedding, calc_init_embedding, DGMGraphs, gumbel_softmax, message_passing, sample_tensor
+from utils import caveman_special, save_graph_list
 
 
 class Args_DGMG:
@@ -86,7 +100,7 @@ def train_DGMG_epoch(epoch, args, model, dataset, optimizer, scheduler, is_fast=
 
             # 1 message passing
             # do 2 times message passing
-            node_embedding = message_passing(node_neighbor, node_embedding, model)
+            node_embedding = message_passing(node_neighbor, node_embedding, model, device=args.device)
 
             # 2 graph embedding and new node embedding
             node_embedding_cat = torch.cat(node_embedding, dim=0)
@@ -117,7 +131,7 @@ def train_DGMG_epoch(epoch, args, model, dataset, optimizer, scheduler, is_fast=
             edge_count = 0
             while edge_count <= len(node_neighbor_new):
                 if not is_fast:
-                    node_embedding = message_passing(node_neighbor, node_embedding, model)
+                    node_embedding = message_passing(node_neighbor, node_embedding, model, device=args.device)
                     node_embedding_cat = torch.cat(node_embedding, dim=0)
                     graph_embedding = calc_graph_embedding(node_embedding_cat, model)
 
@@ -205,7 +219,7 @@ def train_DGMG_forward_epoch(args, model, dataset, is_fast=False):
 
             # 1 message passing
             # do 2 times message passing
-            node_embedding = message_passing(node_neighbor, node_embedding, model)
+            node_embedding = message_passing(node_neighbor, node_embedding, model, device=args.device)
 
             # 2 graph embedding and new node embedding
             node_embedding_cat = torch.cat(node_embedding, dim=0)
@@ -236,7 +250,7 @@ def train_DGMG_forward_epoch(args, model, dataset, is_fast=False):
             edge_count = 0
             while edge_count <= len(node_neighbor_new):
                 if not is_fast:
-                    node_embedding = message_passing(node_neighbor, node_embedding, model)
+                    node_embedding = message_passing(node_neighbor, node_embedding, model, device=args.device)
                     node_embedding_cat = torch.cat(node_embedding, dim=0)
                     graph_embedding = calc_graph_embedding(node_embedding_cat, model)
 
@@ -301,7 +315,7 @@ def test_DGMG_epoch(args, model, is_fast=False):
         while node_count <= args.max_num_node:
             # 1 message passing
             # do 2 times message passing
-            node_embedding = message_passing(node_neighbor, node_embedding, model)
+            node_embedding = message_passing(node_neighbor, node_embedding, model, device=args.device)
 
             # 2 graph embedding and new node embedding
             node_embedding_cat = torch.cat(node_embedding, dim=0)
@@ -310,7 +324,7 @@ def test_DGMG_epoch(args, model, is_fast=False):
 
             # 3 f_addnode
             p_addnode = model.f_an(graph_embedding)
-            a_addnode = sample_tensor(p_addnode)
+            a_addnode = sample_tensor(p_addnode, device=args.device)
             # print(a_addnode.data[0][0])
             if a_addnode.data[0][0] == 1:
                 # print('add node')
@@ -325,13 +339,13 @@ def test_DGMG_epoch(args, model, is_fast=False):
             edge_count = 0
             while edge_count < args.max_num_node:
                 if not is_fast:
-                    node_embedding = message_passing(node_neighbor, node_embedding, model)
+                    node_embedding = message_passing(node_neighbor, node_embedding, model, device=args.device)
                     node_embedding_cat = torch.cat(node_embedding, dim=0)
                     graph_embedding = calc_graph_embedding(node_embedding_cat, model)
 
                 # 4 f_addedge
                 p_addedge = model.f_ae(graph_embedding)
-                a_addedge = sample_tensor(p_addedge)
+                a_addedge = sample_tensor(p_addedge, device=args.device)
                 # print(a_addedge.data[0][0])
 
                 if a_addedge.data[0][0] == 1:
@@ -341,7 +355,7 @@ def test_DGMG_epoch(args, model, is_fast=False):
                     node_new_embedding_cat = node_embedding_cat[-1, :].expand(node_embedding_cat.size(0)-1, node_embedding_cat.size(1))
                     s_node = model.f_s(torch.cat((node_embedding_cat[0:-1, :], node_new_embedding_cat), dim=1))
                     p_node = F.softmax(s_node.permute(1, 0))
-                    a_node = gumbel_softmax(p_node, temperature=0.01)
+                    a_node = gumbel_softmax(p_node, temperature=0.01, device=args.device)
                     _, a_node_id = a_node.topk(1)
                     a_node_id = int(a_node_id.data[0][0])
                     # add edge
@@ -375,7 +389,6 @@ def train_DGMG(args, dataset_train, model):
 
     # initialize optimizer
     optimizer = optim.Adam(list(model.parameters()), lr=args.lr)
-
     scheduler = MultiStepLR(optimizer, milestones=args.milestones, gamma=args.lr_rate)
 
     # start main loop
@@ -428,7 +441,7 @@ if __name__ == '__main__':
     graphs = []
     for i in range(4, 10):
         graphs.append(nx.ladder_graph(i))
-    model = DGM_graphs(h_size=args.node_embedding_size)  # .cuda()
+    model = DGMGraphs(h_size=args.node_embedding_size)  # .cuda()
 
     if args.graph_type == 'ladder_small':
         graphs = []
@@ -464,7 +477,7 @@ if __name__ == '__main__':
         args.max_prev_node = 20
 
     if args.graph_type == 'enzymes_small':
-        graphs_raw = Graph_load_batch(min_num_nodes=10, name='ENZYMES')
+        graphs_raw = graph_load_batch(min_num_nodes=10, name='ENZYMES')
         graphs = []
         for G in graphs_raw:
             if G.number_of_nodes() <= 20:
@@ -472,7 +485,7 @@ if __name__ == '__main__':
         args.max_prev_node = 15
 
     if args.graph_type == 'citeseer_small':
-        _, _, G = Graph_load(dataset='citeseer')
+        _, _, G = graph_load(dataset='citeseer')
         G = max(nx.connected_component_subgraphs(G), key=len)
         G = nx.convert_node_labels_to_integers(G)
         graphs = []
