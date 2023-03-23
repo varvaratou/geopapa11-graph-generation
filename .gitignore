@@ -1,0 +1,11 @@
+# Ignore all image files
+*.png
+*.jpg
+*.jpeg
+
+# Ignore .dat files
+*.dat
+
+# Ignore folders
+timing/
+figures_colored_nodes/
