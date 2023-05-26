@@ -8,7 +8,7 @@ import data
 
 
 def citeseer_ego():
-    _, _, G = data.Graph_load(dataset='citeseer')
+    _, _, G = data.graph_load(dataset='citeseer')
     G = max(nx.connected_component_subgraphs(G), key=len)
     G = nx.convert_node_labels_to_integers(G)
     graphs = []
@@ -214,13 +214,18 @@ def draw_graph(G, prefix='test'):
 
 
 # draw a list of graphs [G]
-def draw_graph_list(G_list, row, col, fname='figures/test', layout='spring', is_single=False, k=1, node_size=55, alpha=1, width=1.3):
+def draw_graph_list(G_list, row, col, fname='figures/test', layout='spring', is_single=False, k=1, node_size=3, alpha=1, width=1.3):
     # # draw graph view
     # from pylab import rcParams
     # rcParams['figure.figsize'] = 12,3
     plt.switch_backend('agg')
     for i, G in enumerate(G_list):
-        plt.subplot(row, col, i + 1)
+        nodelist = G.nodes()
+        node_color = list(G.node.values())
+        if np.all([isinstance(nc, dict) for nc in node_color]):
+            node_color = '#336699'
+
+        plt.subplot(row, col, i+1)
         plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
         # if i%2==0:
         #     plt.title('real nodes: '+str(G.number_of_nodes()), fontsize = 4)
@@ -247,7 +252,7 @@ def draw_graph_list(G_list, row, col, fname='figures/test', layout='spring', is_
         #         colors.append('pink')
         #     if values[i] == 6:
         #         colors.append('black')
-        plt.axis("off")
+        plt.axis('off')
         if layout == 'spring':
             pos = nx.spring_layout(G, k=k / np.sqrt(G.number_of_nodes()), iterations=100)
             # pos = nx.spring_layout(G)
@@ -260,10 +265,10 @@ def draw_graph_list(G_list, row, col, fname='figures/test', layout='spring', is_
 
         if is_single:
             # node_size default 60, edge_width default 1.5
-            nx.draw_networkx_nodes(G, pos, node_size=node_size, node_color='#336699', alpha=1, linewidths=0, font_size=0)
+            nx.draw_networkx_nodes(G, pos, nodelist=nodelist, node_size=node_size, node_color=node_color, alpha=1, linewidths=0, font_size=0)
             nx.draw_networkx_edges(G, pos, alpha=alpha, width=width)
         else:
-            nx.draw_networkx_nodes(G, pos, node_size=1.5, node_color='#336699', alpha=1, linewidths=0.2, font_size=1.5)
+            nx.draw_networkx_nodes(G, pos, nodelist=nodelist, node_size=node_size, node_color=node_color, alpha=1, linewidths=0.2, font_size=1.5)
             nx.draw_networkx_edges(G, pos, alpha=0.3, width=0.2)
 
         # plt.axis('off')
@@ -407,11 +412,11 @@ def decode_graph(adj, prefix):
 
 
 def get_graph(adj):
-    '''
+    """
     get a graph from zero-padded adj
     :param adj:
     :return:
-    '''
+    """
     # remove all zeros rows and columns
     adj = adj[~np.all(adj == 0, axis=1)]
     adj = adj[:, ~np.all(adj == 0, axis=0)]
@@ -420,9 +425,49 @@ def get_graph(adj):
     return G
 
 
-# save a list of graphs
+def get_graph_with_labels(adj):
+    """
+    get a graph from zero-padded adj
+    :param adj:
+    :return:
+    """
+    # find rows that have at least one non-zero element
+    non_zero_row_idx = np.where(~np.all(adj == 0, axis=1))[0]
+    adj = adj[non_zero_row_idx]  # only keep these nodes
+    non_zero_col_idx = np.concatenate([[0], non_zero_row_idx+1])
+    non_zero_col_idx = non_zero_col_idx[non_zero_col_idx < adj.shape[-1]]
+    adj = adj[:, non_zero_col_idx]  # do this for columns too
+
+    non_zero_row_idx = np.where(~np.all(adj == 0, axis=1))[0]
+    adj = adj[non_zero_row_idx]  # only keep these nodes
+    non_zero_col_idx = np.concatenate([[0], non_zero_row_idx+1])
+    non_zero_col_idx = non_zero_col_idx[non_zero_col_idx < adj.shape[-1]]
+    adj = adj[:, non_zero_col_idx]  # do this for columns too
+
+    adj_full = np.zeros((adj.shape[0] + 1, adj.shape[0] + 1), dtype=np.int)
+    n = adj_full.shape[0]
+    adj_full[1:n] = adj
+
+    sampled_node_labels = []
+    for j in range(adj_full.shape[-1]):
+        unique_values, counts = np.unique(adj_full[:, j][adj_full[:, j] > 0], return_counts=True)
+        weights = counts / np.sum(counts)
+        if len(weights):
+            sampled_node_label = np.random.choice(unique_values, size=1, p=weights)[0]
+            adj_full[:, j][adj_full[:, j] > 0] = sampled_node_label
+        else:
+            sampled_node_label = 0
+        sampled_node_labels.append(sampled_node_label)
+
+    adj_full = np.asmatrix(adj_full)
+    G = nx.from_numpy_matrix((adj_full > 0).astype(int))
+    G.node = dict(zip(range(adj_full.shape[0]), sampled_node_labels))
+    return G
+
+
+# save a list of graphs as .pickle fil
 def save_graph_list(G_list, fname):
-    with open(fname, "wb") as f:
+    with open(fname, 'wb') as f:
         pickle.dump(G_list, f)
 
 
