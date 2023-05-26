@@ -1,8 +1,10 @@
 import networkx as nx
 import numpy as np
 
-from utils import *
-from data import *
+from random import shuffle
+
+from data import graph_load_batch, graph_load
+from utils import caveman_special, n_community, perturb_new
 
 
 def create(args):
@@ -113,23 +115,23 @@ def create(args):
 
     # real graphs
     elif args.graph_type == 'enzymes':
-        graphs = Graph_load_batch(min_num_nodes=10, name='ENZYMES')
+        graphs = graph_load_batch(min_num_nodes=10, name='ENZYMES')
         args.max_prev_node = 25
     elif args.graph_type == 'enzymes_small':
-        graphs_raw = Graph_load_batch(min_num_nodes=10, name='ENZYMES')
+        graphs_raw = graph_load_batch(min_num_nodes=10, name='ENZYMES')
         graphs = []
         for G in graphs_raw:
             if G.number_of_nodes() <= 20:
                 graphs.append(G)
         args.max_prev_node = 15
     elif args.graph_type == 'protein':
-        graphs = Graph_load_batch(min_num_nodes=20, name='PROTEINS_full')
+        graphs = graph_load_batch(min_num_nodes=20, name='PROTEINS_full')
         args.max_prev_node = 80
     elif args.graph_type == 'DD':
-        graphs = Graph_load_batch(min_num_nodes=100, max_num_nodes=500, name='DD', node_attributes=False, graph_labels=True)
+        graphs = graph_load_batch(min_num_nodes=100, max_num_nodes=500, name='DD', node_attributes=False, graph_labels=True)
         args.max_prev_node = 230
     elif args.graph_type == 'citeseer':
-        _, _, G = Graph_load(dataset='citeseer')
+        _, _, G = graph_load(dataset='citeseer')
         G = max(nx.connected_component_subgraphs(G), key=len)
         G = nx.convert_node_labels_to_integers(G)
         graphs = []
@@ -139,7 +141,7 @@ def create(args):
                 graphs.append(G_ego)
         args.max_prev_node = 250
     elif args.graph_type == 'citeseer_small':
-        _, _, G = Graph_load(dataset='citeseer')
+        _, _, G = graph_load(dataset='citeseer')
         G = max(nx.connected_component_subgraphs(G), key=len)
         G = nx.convert_node_labels_to_integers(G)
         graphs = []
@@ -151,4 +153,13 @@ def create(args):
         graphs = graphs[0:200]
         args.max_prev_node = 15
 
+    if args.vocab_size_node_label is not None:
+        # here, we just assign labels randomly to nodes (it's just for exposition purposes)
+        for graph in graphs:
+            # node labeling starts from 1
+            nodes_with_labels = dict(
+                zip(graph.node.keys(), np.random.choice(args.vocab_size_node_label, size=len(graph.node), replace=True) + 1)
+                # zip(graph.node.keys(), np.random.choice(3, size=len(graph.node), replace=True) + 1)
+            )
+            graph.node.update(nodes_with_labels)
     return graphs
