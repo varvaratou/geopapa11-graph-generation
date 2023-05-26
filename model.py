@@ -8,7 +8,7 @@ import torch.nn.init as init
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 
-def binary_cross_entropy_weight(y_pred, y, has_weight=False, weight_length=1, weight_max=10):
+def binary_cross_entropy_weight(y_pred, y, has_weight=False, weight_length=1, weight_max=10, device='cpu'):
     """
 
     :param y_pred:
@@ -22,25 +22,28 @@ def binary_cross_entropy_weight(y_pred, y, has_weight=False, weight_length=1, we
         weight_linear = torch.arange(1, weight_length + 1) / weight_length * weight_max
         weight_linear = weight_linear.view(1, weight_length, 1).repeat(y.size(0), 1, y.size(2))
         weight[:, -1 * weight_length:, :] = weight_linear
-        loss = F.binary_cross_entropy(y_pred, y, weight=weight)  # .cuda())
+        loss = F.binary_cross_entropy(y_pred, y, weight=weight.to(device))
+        # loss = F.binary_cross_entropy(y_pred, y, weight=weight.cuda()
     else:
         loss = F.binary_cross_entropy(y_pred, y)
-    return loss
+    return loss.to(device)
 
 
-def sample_tensor(y, sample=True, thresh=0.5):
+def sample_tensor(y, sample=True, thres=0.5, device='cpu'):
     # do sampling
     if sample:
-        y_thresh = Variable(torch.rand(y.size()))  # .cuda()
-        y_result = torch.gt(y, y_thresh).float()
+        # y_thres = Variable(torch.rand(y.size())).cuda()
+        y_thres = Variable(torch.rand(y.size())).to(device)
+        y_result = torch.gt(y, y_thres).float()
     # do max likelihood based on some threshold
     else:
-        y_thresh = Variable(torch.ones(y.size()) * thresh)  # .cuda()
-        y_result = torch.gt(y, y_thresh).float()
+        # y_thres = Variable(torch.ones(y.size()) * thres).cuda()
+        y_thres = Variable(torch.ones(y.size()) * thres).to(device)
+        y_result = torch.gt(y, y_thres).float()
     return y_result
 
 
-def gumbel_softmax(logits, temperature, eps=1e-9):
+def gumbel_softmax(logits, temperature, eps=1e-9, device='cpu'):
     """
     :param logits: shape: N*L
     :param temperature:
@@ -51,8 +54,8 @@ def gumbel_softmax(logits, temperature, eps=1e-9):
     noise = torch.rand(logits.size())
     noise.add_(eps).log_().neg_()
     noise.add_(eps).log_().neg_()
-    noise = Variable(noise)  # .cuda()
-
+    # noise = Variable(noise).cuda()
+    noise = Variable(noise).to(device)
     x = (logits + noise) / temperature
     x = F.softmax(x)
     return x
@@ -67,9 +70,8 @@ def gumbel_softmax(logits, temperature, eps=1e-9):
 #     print(id)
 
 
-def gumbel_sigmoid(logits, temperature):
+def gumbel_sigmoid(logits, temperature, device='cpu'):
     """
-
     :param logits:
     :param temperature:
     :param eps:
@@ -78,10 +80,10 @@ def gumbel_sigmoid(logits, temperature):
     # get gumbel noise
     noise = torch.rand(logits.size())  # uniform(0,1)
     noise_logistic = torch.log(noise) - torch.log(1 - noise)  # logistic(0,1)
-    noise = Variable(noise_logistic)  # .cuda()
-
+    # noise = Variable(noise_logistic).cuda()
+    noise = Variable(noise_logistic).to(device)
     x = (logits + noise) / temperature
-    x = F.sigmoid(x)
+    x = torch.sigmoid(x)
     return x
 
 
@@ -91,63 +93,88 @@ def gumbel_sigmoid(logits, temperature):
 # print(y)
 
 
-def sample_sigmoid(y, sample, thresh=0.5, sample_time=2):
+def sample_sigmoid(y_pred, sample=True, thres=0.5, sample_time=2, device='cpu'):
     """
         do sampling over unnormalized score
-    :param y: input
-    :param sample: Bool
-    :param thresh: if not sample, the threshold
+    :param y_pred: output (y_pred = fout(h). That's basically the logits. The unnormalized \theta in the paper).
+    :param sample: bool
+    :param thres: if not sample, the threshold
     :param sample_time: how many times do we sample, if =1, do single sample
     :return: sampled result
     """
-
     # do sigmoid first
-    y = F.sigmoid(y)
-    # do sampling
+    y_pred = torch.sigmoid(y_pred)
     if sample:
         if sample_time > 1:
-            y_result = Variable(torch.rand(y.size(0), y.size(1), y.size(2)))  # .cuda()
-            # loop over all batches
-            for i in range(y_result.size(0)):
-                # do 'multi_sample' times sampling
+            # y_result = Variable(torch.rand(y.size(0), y.size(1), y.size(2))).cuda()
+            y_sampled_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).to(device)
+            # do sampling (loop over all batches)
+            for i in range(y_sampled_result.size(0)):
+                # do `multi_sample` times sampling
                 for j in range(sample_time):
-                    y_thresh = Variable(torch.rand(y.size(1), y.size(2)))  # .cuda()
-                    y_result[i] = torch.gt(y[i], y_thresh).float()
-                    if (torch.sum(y_result[i]).data > 0).any():
+                    # y_thres = Variable(torch.rand(y.size(1), y.size(2))).cuda()
+                    y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).to(device)
+                    y_sampled_result[i] = torch.gt(y_pred[i], y_thres).float()
+                    if (torch.sum(y_sampled_result[i]).data > 0).any():
                         break
                     # else:
-                    #     print('all zero',j)
+                    #     print('all zero', j)
         else:
-            y_thresh = Variable(torch.rand(y.size(0), y.size(1), y.size(2)))  # .cuda()
-            y_result = torch.gt(y, y_thresh).float()
-    # do max likelihood based on some threshold
-    else:
-        y_thresh = Variable(torch.ones(y.size(0), y.size(1), y.size(2)) * thresh)  # .cuda()
-        y_result = torch.gt(y, y_thresh).float()
-    return y_result
+            # y_thres = Variable(torch.rand(y.size(0), y.size(1), y.size(2))).cuda()
+            y_thres = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).to(device)
+            y_sampled_result = torch.gt(y_pred, y_thres).float()
+    else:  # do max likelihood based on some threshold
+        # y_thres = Variable(torch.ones(y.size(0), y.size(1), y.size(2)) * thres).cuda()
+        y_thres = Variable(torch.ones(y_pred.size(0), y_pred.size(1), y_pred.size(2)) * thres).to(device)
+        y_sampled_result = torch.gt(y_pred, y_thres).float()
+    return y_sampled_result
 
 
-def sample_sigmoid_supervised(y_pred, y, current, y_len, sample_time=2):
+def sample_softmax(y_pred, sample=True, device='cpu'):
+    """
+        do sampling over unnormalized score
+    :param y_pred: output (y_pred = fout(h). That's basically the logits. The unnormalized \theta in the paper).
+    :param sample: bool If False, sample the value with the maximum likelihood.
+    :return: sampled result
+    """
+    # do softmax first
+    y_pred = F.softmax(y_pred, dim=-1)
+
+    if sample:
+        y_sampled_result = Variable(torch.zeros(y_pred.shape[0], y_pred.shape[1])).to(torch.int64)
+        for i in range(y_pred.shape[0]):
+            y_sampled_result[i, 0] = torch.multinomial(y_pred[i, 0], 1).view(-1)
+    else:  # do max likelihood
+        y_sampled_result = Variable(torch.zeros(y_pred.shape[0], y_pred.shape[1], y_pred.shape[2])).to(torch.int64)
+        for i in range(y_pred.shape[0]):
+            y_sampled_result[i, 0] = torch.argmax(y_pred[i, 0], dim=-1)
+
+    y_sampled_result = y_sampled_result.to(torch.int64)
+    return y_sampled_result
+
+
+def sample_sigmoid_supervised(y_pred, y, current, y_len, sample_time=2, device='cpu'):
     """
         do sampling over unnormalized score
     :param y_pred: input
     :param y: supervision
-    :param sample: Bool
-    :param thresh: if not sample, the threshold
+    :param sample: bool
     :param sample_time: how many times do we sample, if =1, do single sample
     :return: sampled result
     """
     # do sigmoid first
-    y_pred = F.sigmoid(y_pred)
+    y_pred = torch.sigmoid(y_pred)
     # do sampling
-    y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2)))  # .cuda()
+    # y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).cuda()
+    y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).to(device)
     # loop over all batches
     for i in range(y_result.size(0)):
         # using supervision
         if current < y_len[i]:
             while True:
-                y_thresh = Variable(torch.rand(y_pred.size(1), y_pred.size(2)))  # .cuda()
-                y_result[i] = torch.gt(y_pred[i], y_thresh).float()
+                # y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).cuda()
+                y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).to(device)
+                y_result[i] = torch.gt(y_pred[i], y_thres).float()
                 # print('current',current)
                 # print('y_result',y_result[i].data)
                 # print('y',y[i])
@@ -156,40 +183,110 @@ def sample_sigmoid_supervised(y_pred, y, current, y_len, sample_time=2):
                     break
         # supervision done
         else:
-            # do 'multi_sample' times sampling
+            # do `multi_sample` times sampling
             for j in range(sample_time):
-                y_thresh = Variable(torch.rand(y_pred.size(1), y_pred.size(2)))  # .cuda()
-                y_result[i] = torch.gt(y_pred[i], y_thresh).float()
+                # y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).cuda()
+                y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).to(device)
+                y_result[i] = torch.gt(y_pred[i], y_thres).float()
                 if (torch.sum(y_result[i]).data > 0).any():
                     break
     return y_result
 
 
-def sample_sigmoid_supervised_simple(y_pred, y, current, y_len, sample_time=2):
+def sample_softmax_supervised(y_pred, y, current, y_len, sample_time=2, device='cpu'):
     """
         do sampling over unnormalized score
     :param y_pred: input
     :param y: supervision
     :param sample: bool
-    :param thresh: if not sample, the threshold
     :param sample_time: how many times do we sample, if =1, do single sample
     :return: sampled result
     """
     # do sigmoid first
-    y_pred = F.sigmoid(y_pred)
+    y_pred = torch.sigmoid(y_pred)
     # do sampling
-    y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2)))  # .cuda()
+    # y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).cuda()
+    y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).to(device)
     # loop over all batches
+    for i in range(y_result.size(0)):
+        # using supervision
+        if current < y_len[i]:
+            while True:
+                # y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).cuda()
+                y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).to(device)
+                y_result[i] = torch.gt(y_pred[i], y_thres).float()
+                # print('current',current)
+                # print('y_result',y_result[i].data)
+                # print('y',y[i])
+                y_diff = y_result[i].data - y[i]
+                if (y_diff >= 0).all():
+                    break
+        # supervision done
+        else:
+            # do `multi_sample` times sampling
+            for j in range(sample_time):
+                # y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).cuda()
+                y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).to(device)
+                y_result[i] = torch.gt(y_pred[i], y_thres).float()
+                if (torch.sum(y_result[i]).data > 0).any():
+                    break
+    return y_result
+
+def sample_sigmoid_supervised_simple(y_pred, y, current, y_len, sample_time=2, device='cpu'):
+    """
+        do sampling over unnormalized score
+    :param y_pred: input
+    :param y: supervision
+    :param sample: bool
+    :param sample_time: how many times do we sample, if =1, do single sample
+    :return: sampled result
+    """
+    # apply sigmoid first
+    y_pred = torch.sigmoid(y_pred)
+    # y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).cuda()
+    y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).to(device)
+    # do sampling (loop over all batches)
     for i in range(y_result.size(0)):
         # using supervision
         if current < y_len[i]:
             y_result[i] = y[i]
         # supervision done
         else:
-            # do 'multi_sample' times sampling
+            # do `multi_sample` times sampling
             for j in range(sample_time):
-                y_thresh = Variable(torch.rand(y_pred.size(1), y_pred.size(2)))  # .cuda()
-                y_result[i] = torch.gt(y_pred[i], y_thresh).float()
+                # y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).cuda()
+                y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).to(device)
+                y_result[i] = torch.gt(y_pred[i], y_thres).float()
+                if (torch.sum(y_result[i]).data > 0).any():
+                    break
+    return y_result
+
+
+def sample_softmax_supervised_simple(y_pred, y, current, y_len, sample_time=2, device='cpu'):
+    """
+        do sampling over unnormalized score
+    :param y_pred: input
+    :param y: supervision
+    :param sample: bool
+    :param sample_time: how many times do we sample, if =1, do single sample
+    :return: sampled result
+    """
+    # apply sigmoid first
+    y_pred = torch.sigmoid(y_pred)
+    # y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).cuda()
+    y_result = Variable(torch.rand(y_pred.size(0), y_pred.size(1), y_pred.size(2))).to(device)
+    # do sampling (loop over all batches)
+    for i in range(y_result.size(0)):
+        # using supervision
+        if current < y_len[i]:
+            y_result[i] = y[i]
+        # supervision done
+        else:
+            # do `multi_sample` times sampling
+            for j in range(sample_time):
+                # y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).cuda()
+                y_thres = Variable(torch.rand(y_pred.size(1), y_pred.size(2))).to(device)
+                y_result[i] = torch.gt(y_pred[i], y_thres).float()
                 if (torch.sum(y_result[i]).data > 0).any():
                     break
     return y_result
@@ -205,20 +302,33 @@ def sample_sigmoid_supervised_simple(y_pred, y, current, y_len, sample_time=2):
 
 
 # plain LSTM model
-class LSTM_plain(nn.Module):
-    def __init__(self, input_size, embedding_size, hidden_size, num_layers, has_input=True, has_output=False, output_size=None):
-        super(LSTM_plain, self).__init__()
-        self.num_layers = num_layers
+class LSTMPlain(nn.Module):
+    def __init__(
+            self,
+            input_size,
+            embedding_size,
+            hidden_size,
+            num_layers,
+            transform_input=True,
+            output_size=None,
+            device='cpu'
+    ):
+        super(LSTMPlain, self).__init__()
+        self.input_size = input_size
+        self.embedding_size = embedding_size
         self.hidden_size = hidden_size
-        self.has_input = has_input
-        self.has_output = has_output
+        self.num_layers = num_layers
+        self.transform_input = transform_input
+        self.output_size = output_size
+        self.device = device
 
-        if has_input:
-            self.input = nn.Linear(input_size, embedding_size)
-            self.rnn = nn.LSTM(input_size=embedding_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        if transform_input:
+            self.input = nn.Linear(self.input_size, self.embedding_size)
+            self.rnn = nn.LSTM(input_size=self.embedding_size, hidden_size=self.hidden_size, num_layers=self.num_layers, batch_first=True)
         else:
-            self.rnn = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
-        if has_output:
+            self.rnn = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, num_layers=self.num_layers, batch_first=True)
+
+        if self.output_size is not None:
             self.output = nn.Sequential(
                 nn.Linear(hidden_size, embedding_size),
                 nn.ReLU(),
@@ -226,6 +336,7 @@ class LSTM_plain(nn.Module):
             )
 
         self.relu = nn.ReLU()
+
         # initialize
         self.hidden = None  # need initialize before forward run
 
@@ -239,88 +350,149 @@ class LSTM_plain(nn.Module):
                 m.weight.data = init.xavier_uniform_(m.weight.data, gain=nn.init.calculate_gain('relu'))
 
     def init_hidden(self, batch_size):
-        return (Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)),  # .cuda(),
-                Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)))  # .cuda())
+        return (Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)).to(self.device),
+                Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)).to(self.device))
+        # return (Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)).cuda(),
+        #         Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)).cuda())
 
     def forward(self, input_raw, pack=False, input_len=None):
-        if self.has_input:
+        if self.transform_input:
             input = self.input(input_raw)
             input = self.relu(input)
         else:
             input = input_raw
+
         if pack:
             input = pack_padded_sequence(input, input_len, batch_first=True)
+
+        # output_raw[i, t]: hidden RNN embedding of the t-th time step of the **last** RNN layer of example i
+        # self.hidden[k, i]: hidden RNN embedding of the last time step of the k-th RNN layer of example i
+        # output_raw[i, input_len[i]-1] == self.hidden[-1, i]
         output_raw, self.hidden = self.rnn(input, self.hidden)
+
         if pack:
             output_raw = pad_packed_sequence(output_raw, batch_first=True)[0]
-        if self.has_output:
+
+        if self.output_size is not None:
             output_raw = self.output(output_raw)
+
         # return hidden state at each time step
         return output_raw
 
 
 # plain GRU model
-class GRU_plain(nn.Module):
-    def __init__(self, input_size, embedding_size, hidden_size, num_layers, has_input=True, has_output=False, output_size=None):
-        super(GRU_plain, self).__init__()
-        self.num_layers = num_layers
+class GRUPlain(nn.Module):
+    def __init__(
+            self,
+            input_size,
+            embedding_size,
+            hidden_size,
+            num_layers,
+            transform_input=True,
+            output_size=None,  # `output_size` is when the RNN has an output different than the hidden vectors
+            vocab_size_node_label=None,  # `vocab_size_node_label` is when we convert labels to embeddings
+            embedding_size_node_label=None,
+            device='cpu'
+    ):
+        super(GRUPlain, self).__init__()
+        self.input_size = input_size
+        self.embedding_size = embedding_size
+        self.embedding_size_node_label = embedding_size_node_label
         self.hidden_size = hidden_size
-        self.has_input = has_input
-        self.has_output = has_output
+        self.num_layers = num_layers
+        self.transform_input = transform_input
+        self.output_size = output_size
+        self.vocab_size_node_label = vocab_size_node_label
+        self.device = device
 
-        if has_input:
-            self.input = nn.Linear(input_size, embedding_size)
-            self.rnn = nn.GRU(input_size=embedding_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        if self.transform_input:
+            if self.vocab_size_node_label is not None and self.embedding_size_node_label is not None:
+                self.input_graph = nn.Linear(self.input_size, self.embedding_size)
+                self.input_node_label = nn.Embedding(self.vocab_size_node_label, self.embedding_size_node_label)
+                self.linear = nn.Linear(self.input_size * self.embedding_size_node_label, self.embedding_size)
+                rnn_input_size = 2 * self.embedding_size
+            else:
+                self.input = nn.Linear(self.input_size, self.embedding_size)
+                rnn_input_size = self.embedding_size
         else:
-            self.rnn = nn.GRU(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
-        if has_output:
+            rnn_input_size = self.input_size
+
+        self.rnn = nn.GRU(
+            input_size=rnn_input_size,
+            hidden_size=self.hidden_size,
+            num_layers=self.num_layers,
+            batch_first=True
+        )
+
+        if self.output_size is not None:
             self.output = nn.Sequential(
-                nn.Linear(hidden_size, embedding_size),
+                nn.Linear(self.hidden_size, self.embedding_size),
                 nn.ReLU(),
-                nn.Linear(embedding_size, output_size)
+                nn.Linear(self.embedding_size, self.output_size)
             )
 
         self.relu = nn.ReLU()
-        # initialize
-        self.hidden = None  # need initialize before forward run
+        self.hidden = None  # need to initialize before forward run
 
         for name, param in self.rnn.named_parameters():
             if 'bias' in name:
                 nn.init.constant_(param, 0.25)
             elif 'weight' in name:
                 nn.init.xavier_uniform_(param, gain=nn.init.calculate_gain('sigmoid'))
+
         for m in self.modules():
-            if isinstance(m, nn.Linear):
+            if isinstance(m, nn.Linear) or isinstance(m, nn.Embedding):
                 m.weight.data = init.xavier_uniform_(m.weight.data, gain=nn.init.calculate_gain('relu'))
 
     def init_hidden(self, batch_size):
-        return Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size))  # .cuda()
+        return Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)).to(self.device)
+        # return Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size)).cuda()
 
     def forward(self, input_raw, pack=False, input_len=None):
-        if self.has_input:
-            input = self.input(input_raw)
+        if self.transform_input:
+            # input_raw[0]: (batch_size, max_num_node, max_num_node) -- input_raw[0][:, i]: edges of node i-1 against nodes 0, 1, ..., i-2
+            # input_raw[1]: (batch_size, max_num_node, max_num_node) -- input_raw[1][:, i]: labels up to node i-1 (0, 1, ..., i-1)
+            if isinstance(input_raw, tuple):
+                # input_graph: (batch_size, max_num_node, self.embedding_size)
+                input_graph = self.input_graph(input_raw[0])
+                # input_node_label: (batch_size, max_num_node, max_num_node, self.embedding_size_node_label)
+                input_node_label = self.input_node_label(input_raw[1])
+                # input_node_label: (batch_size, max_num_node, max_num_node * self.embedding_size_node_label)
+                input_node_label = input_node_label.contiguous().view(input_node_label.shape[0], input_node_label.shape[1], -1)
+                input_node_label = self.linear(input_node_label)  # (batch_size, max_num_node, self.embedding_size)
+                input = torch.cat([input_graph, input_node_label], dim=-1)  # (batch_size, max_num_node, 2 * self.embedding_size)
+            else:
+                input = self.input(input_raw)
             input = self.relu(input)
         else:
             input = input_raw
+
         if pack:
             input = pack_padded_sequence(input, input_len, batch_first=True)
+
+        # output_raw[i, t]: hidden RNN embedding of the t-th time step of the **last** RNN layer of example i
+        # self.hidden[k, i]: hidden RNN embedding of the last time step of the k-th RNN layer of example i
+        # output_raw[i, input_len[i]-1] == self.hidden[-1, i]
         output_raw, self.hidden = self.rnn(input, self.hidden)
+
         if pack:
             output_raw = pad_packed_sequence(output_raw, batch_first=True)[0]
-        if self.has_output:
-            output_raw = self.output(output_raw)
+
         # return hidden state at each time step
-        return output_raw
+        return output_raw if self.output_size is None else self.output(output_raw)
 
 
 # a deterministic linear output
-class MLP_plain(nn.Module):
+class MLPPlain(nn.Module):
     def __init__(self, h_size, embedding_size, y_size):
-        super(MLP_plain, self).__init__()
+        super(MLPPlain, self).__init__()
+        self.h_size = h_size
+        self.embedding_size = embedding_size
+        self.y_size = y_size
         self.deterministic_output = nn.Sequential(
-            nn.Linear(h_size, embedding_size),
+            nn.Linear(self.h_size, self.embedding_size),
             nn.ReLU(),
-            nn.Linear(embedding_size, y_size)
+            nn.Linear(self.embedding_size, self.y_size)
         )
 
         for m in self.modules():
@@ -332,10 +504,10 @@ class MLP_plain(nn.Module):
         return y
 
 
-# a deterministic linear output, additional output indicates if the sequence should continue grow
-class MLP_token_plain(nn.Module):
+# a deterministic linear output, additional output indicates if the sequence should continue to grow
+class MLPTokenPlain(nn.Module):
     def __init__(self, h_size, embedding_size, y_size):
-        super(MLP_token_plain, self).__init__()
+        super(MLPTokenPlain, self).__init__()
         self.deterministic_output = nn.Sequential(
             nn.Linear(h_size, embedding_size),
             nn.ReLU(),
@@ -358,9 +530,10 @@ class MLP_token_plain(nn.Module):
 
 
 # a deterministic linear output (update: add noise)
-class MLP_VAE_plain(nn.Module):
-    def __init__(self, h_size, embedding_size, y_size):
-        super(MLP_VAE_plain, self).__init__()
+class MLPVAEPlain(nn.Module):
+    def __init__(self, h_size, embedding_size, y_size, device='cpu'):
+        super(MLPVAEPlain, self).__init__()
+        self.device = device
         self.encode_11 = nn.Linear(h_size, embedding_size)  # mu
         self.encode_12 = nn.Linear(h_size, embedding_size)  # lsgms
 
@@ -378,7 +551,8 @@ class MLP_VAE_plain(nn.Module):
         z_lsgms = self.encode_12(h)
         # re-parameterize
         z_sgm = z_lsgms.mul(0.5).exp_()
-        eps = Variable(torch.randn(z_sgm.size()))  # .cuda()
+        eps = Variable(torch.randn(z_sgm.size())).to(self.device)
+        # eps = Variable(torch.randn(z_sgm.size())).cuda()
         z = eps * z_sgm + z_mu
         # decoder
         y = self.decode_1(z)
@@ -388,9 +562,10 @@ class MLP_VAE_plain(nn.Module):
 
 
 # a deterministic linear output (update: add noise)
-class MLP_VAE_conditional_plain(nn.Module):
-    def __init__(self, h_size, embedding_size, y_size):
-        super(MLP_VAE_conditional_plain, self).__init__()
+class MLPVAEConditionalPlain(nn.Module):
+    def __init__(self, h_size, embedding_size, y_size, device='cpu'):
+        super(MLPVAEConditionalPlain, self).__init__()
+        self.device = device
         self.encode_11 = nn.Linear(h_size, embedding_size)  # mu
         self.encode_12 = nn.Linear(h_size, embedding_size)  # lsgms
 
@@ -408,7 +583,8 @@ class MLP_VAE_conditional_plain(nn.Module):
         z_lsgms = self.encode_12(h)
         # reparameterize
         z_sgm = z_lsgms.mul(0.5).exp_()
-        eps = Variable(torch.randn(z_sgm.size(0), z_sgm.size(1), z_sgm.size(2)))  # .cuda()
+        eps = Variable(torch.randn(z_sgm.size(0), z_sgm.size(1), z_sgm.size(2))).to(self.device)
+        # eps = Variable(torch.randn(z_sgm.size(0), z_sgm.size(1), z_sgm.size(2))).cuda()
         z = eps * z_sgm + z_mu
         # decoder
         y = self.decode_1(torch.cat((h, z), dim=2))
@@ -419,12 +595,12 @@ class MLP_VAE_conditional_plain(nn.Module):
 
 # baseline model 1: Learning deep generative model of graphs
 
-class DGM_graphs(nn.Module):
+class DGMGraphs(nn.Module):
     def __init__(self, h_size):
         # h_size: node embedding size
         # h_size*2: graph embedding size
 
-        super(DGM_graphs, self).__init__()
+        super(DGMGraphs, self).__init__()
         # all modules used by the model
         # 1 message passing, 2 times
         self.m_uv_1 = nn.Linear(h_size * 2, h_size * 2)
@@ -464,7 +640,7 @@ class DGM_graphs(nn.Module):
         self.f_s = nn.Linear(h_size * 2, 1)
 
 
-def message_passing(node_neighbor, node_embedding, model):
+def message_passing(node_neighbor, node_embedding, model, device='cpu'):
     node_embedding_new = []
     for i in range(len(node_neighbor)):
         neighbor_num = len(node_neighbor[i])
@@ -474,7 +650,8 @@ def message_passing(node_neighbor, node_embedding, model):
             message = torch.sum(model.m_uv_1(torch.cat((node_self, node_self_neighbor), dim=1)), dim=0, keepdim=True)
             node_embedding_new.append(model.f_n_1(message, node_embedding[i]))
         else:
-            message_null = Variable(torch.zeros((node_embedding[i].size(0), node_embedding[i].size(1) * 2)))  # .cuda()
+            message_null = Variable(torch.zeros((node_embedding[i].size(0), node_embedding[i].size(1) * 2))).to(device)
+            # message_null = Variable(torch.zeros((node_embedding[i].size(0), node_embedding[i].size(1) * 2))).cuda()
             node_embedding_new.append(model.f_n_1(message_null, node_embedding[i]))
     node_embedding = node_embedding_new
     node_embedding_new = []
@@ -486,7 +663,8 @@ def message_passing(node_neighbor, node_embedding, model):
             message = torch.sum(model.m_uv_1(torch.cat((node_self, node_self_neighbor), dim=1)), dim=0, keepdim=True)
             node_embedding_new.append(model.f_n_1(message, node_embedding[i]))
         else:
-            message_null = Variable(torch.zeros((node_embedding[i].size(0), node_embedding[i].size(1) * 2)))  # .cuda()
+            message_null = Variable(torch.zeros((node_embedding[i].size(0), node_embedding[i].size(1) * 2))).to(device)
+            # message_null = Variable(torch.zeros((node_embedding[i].size(0), node_embedding[i].size(1) * 2))).cuda()
             node_embedding_new.append(model.f_n_1(message_null, node_embedding[i]))
     return node_embedding_new
 
@@ -506,13 +684,14 @@ def calc_init_embedding(node_embedding_cat, model):
     return init_embedding
 
 
-# code that are NOT used for final version
+# code that is NOT used for final version
 
 # RNN that updates according to graph structure, new proposed model
-class Graph_RNN_structure(nn.Module):
-    def __init__(self, hidden_size, batch_size, output_size, num_layers, is_dilation=True, is_bn=True):
-        super(Graph_RNN_structure, self).__init__()
+class GraphRNNStructure(nn.Module):
+    def __init__(self, hidden_size, batch_size, output_size, num_layers, is_dilation=True, is_bn=True, device='cpu'):
+        super(GraphRNNStructure, self).__init__()
         # model configuration
+        self.device = device
         self.hidden_size = hidden_size
         self.batch_size = batch_size
         self.output_size = output_size
@@ -588,11 +767,13 @@ class Graph_RNN_structure(nn.Module):
 
     def init_hidden(self, len=None):
         if len is None:
-            return Variable(torch.ones(self.batch_size, self.hidden_size, 1))  # .cuda()
+            return Variable(torch.ones(self.batch_size, self.hidden_size, 1)).to(self.device)
+            # return Variable(torch.ones(self.batch_size, self.hidden_size, 1)).cuda()
         else:
             hidden_list = []
             for i in range(len):
-                hidden_list.append(Variable(torch.ones(self.batch_size, self.hidden_size, 1)))  # .cuda())
+                hidden_list.append(Variable(torch.ones(self.batch_size, self.hidden_size, 1)).to(self.device))
+                # hidden_list.append(Variable(torch.ones(self.batch_size, self.hidden_size, 1)).cuda())
             return hidden_list
 
     # only run a single forward step
@@ -633,23 +814,26 @@ class Graph_RNN_structure(nn.Module):
         #     # when validating, we need to sampling at each time step
         #     y_pred = Variable(torch.zeros(x.size(0), x.size(1), x.size(2))).cuda()
         #     y_pred_long = Variable(torch.zeros(x.size(0), x.size(1), x.size(2))).cuda()
+        #     y_pred = y_pred.cuda()
+        #     y_pred_long = y_pred_long.cuda()
         #     x_step = x[:, 0:1, :]
         #     for i in range(x.size(1)):
         #         y_step,_ = self.gru_output(x_step)
         #         y_step = self.linear_output(y_step)
         #         y_pred[:, i, :] = y_step
-        #         y_step = F.sigmoid(y_step)
-        #         x_step = sample(y_step, sample=True, thresh=0.45)
+        #         y_step = torch.sigmoid(y_step)
+        #         x_step = sample(y_step, sample=True, thres=0.45)
         #         y_pred_long[:, i, :] = x_step
         #     pass
 
         # 3 then update self.hidden_all list
         # i.e., model will use ground truth to update new node
         # x_pred_sample = gumbel_sigmoid(x_pred, temperature=temperature)
-        x_pred_sample = sample_tensor(F.sigmoid(x_pred), sample=True)
-        thresh = 0.5
-        x_thresh = Variable(torch.ones(x_pred_sample.size(0), x_pred_sample.size(1), x_pred_sample.size(2)) * thresh)  # .cuda()
-        x_pred_sample_long = torch.gt(x_pred_sample, x_thresh).long()
+        x_pred_sample = sample_tensor(torch.sigmoid(x_pred), sample=True, device=self.device)
+        thres = 0.5
+        x_thres = Variable(torch.ones(x_pred_sample.size(0), x_pred_sample.size(1), x_pred_sample.size(2)) * thres).to(self.device)
+        # x_thres = Variable(torch.ones(x_pred_sample.size(0), x_pred_sample.size(1), x_pred_sample.size(2)) * thres).cuda()
+        x_pred_sample_long = torch.gt(x_pred_sample, x_thres).long()
         if teacher_forcing:
             # first mask previous hidden states
             hidden_all_cat_select = hidden_all_cat * x
@@ -703,10 +887,11 @@ class Graph_RNN_structure(nn.Module):
 # print(x_pred)
 
 
-# current baseline model, generating a graph by lstm
-class Graph_generator_LSTM(nn.Module):
-    def __init__(self, feature_size, input_size, hidden_size, output_size, batch_size, num_layers):
-        super(Graph_generator_LSTM, self).__init__()
+# current baseline model, generating a graph by LSTM
+class GraphGeneratorLSTM(nn.Module):
+    def __init__(self, feature_size, input_size, hidden_size, output_size, batch_size, num_layers, device='cpu'):
+        super(GraphGeneratorLSTM, self).__init__()
+        self.device = device
         self.batch_size = batch_size
         self.num_layers = num_layers
         self.hidden_size = hidden_size
@@ -727,15 +912,22 @@ class Graph_generator_LSTM(nn.Module):
                 m.weight.data = init.xavier_uniform_(m.weight.data, gain=nn.init.calculate_gain('relu'))
 
     def init_hidden(self):
-        return (Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size)),  # .cuda(),
-                Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size)))  # .cuda())
+        return (Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size)).to(self.device),
+                Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size)).to(self.device))
+        # return (Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size)).cuda(),
+        #         Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size)).cuda())
 
     def forward(self, input_raw, pack=False, len=None):
         input = self.linear_input(input_raw)
         input = self.relu(input)
         if pack:
             input = pack_padded_sequence(input, len, batch_first=True)
+
+        # output_raw[i, t]: hidden RNN embedding of the t-th time step of the **last** RNN layer of example i
+        # self.hidden[k, i]: hidden RNN embedding of the last time step of the k-th RNN layer of example i
+        # output_raw[i, input_len[i]-1] == self.hidden[-1, i]
         output_raw, self.hidden = self.lstm(input, self.hidden)
+
         if pack:
             output_raw = pad_packed_sequence(output_raw, batch_first=True)[0]
         output = self.linear_output(output_raw)
@@ -743,9 +935,9 @@ class Graph_generator_LSTM(nn.Module):
 
 
 # a simple MLP generator output
-class Graph_generator_LSTM_output_generator(nn.Module):
+class GraphGeneratorLSTMOutputGenerator(nn.Module):
     def __init__(self, h_size, n_size, y_size):
-        super(Graph_generator_LSTM_output_generator, self).__init__()
+        super(GraphGeneratorLSTMOutputGenerator, self).__init__()
         # one layer MLP
         self.generator_output = nn.Sequential(
             nn.Linear(h_size + n_size, 64),
@@ -762,9 +954,9 @@ class Graph_generator_LSTM_output_generator(nn.Module):
 
 
 # a simple MLP discriminator
-class Graph_generator_LSTM_output_discriminator(nn.Module):
+class GraphGeneratorLSTMOutputDiscriminator(nn.Module):
     def __init__(self, h_size, y_size):
-        super(Graph_generator_LSTM_output_discriminator, self).__init__()
+        super(GraphGeneratorLSTMOutputDiscriminator, self).__init__()
         # one layer MLP
         self.discriminator_output = nn.Sequential(
             nn.Linear(h_size + y_size, 64),
@@ -781,11 +973,12 @@ class Graph_generator_LSTM_output_discriminator(nn.Module):
 
 # GCN basic operation
 class GraphConv(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, device='cpu'):
         super(GraphConv, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.weight = nn.Parameter(torch.FloatTensor(input_dim, output_dim))  # .cuda())
+        self.weight = nn.Parameter(torch.FloatTensor(input_dim, output_dim).to(device))
+        # self.weight = nn.Parameter(torch.FloatTensor(input_dim, output_dim).cuda())
         # self.relu = nn.ReLU()
 
     def forward(self, x, adj):
@@ -795,11 +988,12 @@ class GraphConv(nn.Module):
 
 
 # vanilla GCN encoder
-class GCN_encoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        super(GCN_encoder, self).__init__()
-        self.conv1 = GraphConv(input_dim=input_dim, output_dim=hidden_dim)
-        self.conv2 = GraphConv(input_dim=hidden_dim, output_dim=output_dim)
+class GCNEncoder(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, device='cpu'):
+        super(GCNEncoder, self).__init__()
+        self.device = device
+        self.conv1 = GraphConv(input_dim=input_dim, output_dim=hidden_dim, device=device)
+        self.conv2 = GraphConv(input_dim=hidden_dim, output_dim=output_dim, device=device)
         # self.bn1 = nn.BatchNorm1d(output_dim)
         # self.bn2 = nn.BatchNorm1d(output_dim)
         self.relu = nn.ReLU()
@@ -824,9 +1018,9 @@ class GCN_encoder(nn.Module):
 
 
 # vanilla GCN decoder
-class GCN_decoder(nn.Module):
+class GCNDecoder(nn.Module):
     def __init__(self):
-        super(GCN_decoder, self).__init__()
+        super(GCNDecoder, self).__init__()
         # self.act = nn.Sigmoid()
 
     def forward(self, x):
@@ -840,15 +1034,16 @@ class GCN_decoder(nn.Module):
 
 # GCN based graph embedding
 # allowing for arbitrary num of nodes
-class GCN_encoder_graph(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
-        super(GCN_encoder_graph, self).__init__()
+class GCNEncoderGraph(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, device='cpu'):
+        super(GCNEncoderGraph, self).__init__()
         self.num_layers = num_layers
-        self.conv_first = GraphConv(input_dim=input_dim, output_dim=hidden_dim)
+        self.device = device
+        self.conv_first = GraphConv(input_dim=input_dim, output_dim=hidden_dim, device=device)
         # self.conv_hidden1 = GraphConv(input_dim=hidden_dim, output_dim=hidden_dim)
         # self.conv_hidden2 = GraphConv(input_dim=hidden_dim, output_dim=hidden_dim)
-        self.conv_block = nn.ModuleList([GraphConv(input_dim=hidden_dim, output_dim=hidden_dim) for i in range(num_layers)])
-        self.conv_last = GraphConv(input_dim=hidden_dim, output_dim=output_dim)
+        self.conv_block = nn.ModuleList([GraphConv(input_dim=hidden_dim, output_dim=hidden_dim, device=device) for _ in range(num_layers)])
+        self.conv_last = GraphConv(input_dim=hidden_dim, output_dim=output_dim, device=device)
         self.act = nn.ReLU()
         for m in self.modules():
             if isinstance(m, GraphConv):
@@ -885,14 +1080,15 @@ class GCN_encoder_graph(nn.Module):
 # print(y.size())
 
 
-def preprocess(A):
+def preprocess(A, device='cpu'):
     # Get size of the adjacency matrix
     size = A.size(1)
     # Get the degrees for each node
     degrees = torch.sum(A, dim=2)
 
     # Create diagonal matrix D from the degrees of the nodes
-    D = Variable(torch.zeros(A.size(0), A.size(1), A.size(2)))  # .cuda()
+    D = Variable(torch.zeros(A.size(0), A.size(1), A.size(2))).to(device)
+    # D = Variable(torch.zeros(A.size(0), A.size(1), A.size(2))).cuda()
     for i in range(D.size(0)):
         D[i, :, :] = torch.diag(torch.pow(degrees[i, :], -0.5))
     # Cholesky decomposition of D
@@ -908,11 +1104,12 @@ def preprocess(A):
 
 
 # a sequential GCN model, GCN with n layers
-class GCN_generator(nn.Module):
-    def __init__(self, hidden_dim):
-        super(GCN_generator, self).__init__()
+class GCNGenerator(nn.Module):
+    def __init__(self, hidden_dim, device='cpu'):
+        super(GCNGenerator, self).__init__()
         # todo: add an linear_input module to map the input feature into 'hidden_dim'
-        self.conv = GraphConv(input_dim=hidden_dim, output_dim=hidden_dim)
+        self.device = device
+        self.conv = GraphConv(input_dim=hidden_dim, output_dim=hidden_dim, device=device)
         self.act = nn.ReLU()
         # initialize
         for m in self.modules():
@@ -923,13 +1120,13 @@ class GCN_generator(nn.Module):
         # x: batch * node_num * feature
         batch_num = x.size(0)
         node_num = x.size(1)
-        adj = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1))  # .cuda()
-        adj_output = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1))  # .cuda()
+        adj = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1)).to(self.device)
+        adj_output = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1)).to(self.device)
+        # adj = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1)).cuda()
+        # adj_output = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1)).cuda()
 
         # do GCN n times
-        # todo: try if residual connections are plausible
-        # todo: add higher order of adj (adj^2, adj^3, ...)
-        # todo: try if norm everytime is plausible
+        # todo: 1) try if residual connections are plausible, 2) add higher order of adj (adj^2, adj^3, ...), 3) try if norm is plausible
 
         # first do GCN 1 time to preprocess the raw features
 
@@ -953,12 +1150,13 @@ class GCN_generator(nn.Module):
             adj_output[:, 0:i, i] = prob.clone()
             # 2 update adj
             if teacher_force:
-                adj = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1))  # .cuda()
+                adj = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1)).to(self.device)
+                # adj = Variable(torch.eye(node_num).view(1, node_num, node_num).repeat(batch_num, 1, 1)).cuda()
                 adj[:, 0:i + 1, 0:i + 1] = adj_real[:, 0:i + 1, 0:i + 1].clone()
             else:
                 adj[:, i, 0:i] = prob.permute(0, 2, 1).clone()
                 adj[:, 0:i, i] = prob.clone()
-            adj = preprocess(adj)
+            adj = preprocess(adj, device=self.device)
             # print(adj)
             # print(adj.min().data[0],adj.max().data[0])
             # print(x.min().data[0],x.max().data[0])
@@ -1003,41 +1201,39 @@ class GCN_generator(nn.Module):
 #             print('node num', i, '  batch size',batch, '  run time', end-start)
 
 
-class CNN_decoder(nn.Module):
+class CNNDecoder(nn.Module):
     def __init__(self, input_size, output_size, stride=2):
 
-        super(CNN_decoder, self).__init__()
+        super(CNNDecoder, self).__init__()
 
         self.input_size = input_size
         self.output_size = output_size
 
         self.relu = nn.ReLU()
-        self.deconv1_1 = nn.ConvTranspose1d(in_channels=int(self.input_size), out_channels=int(self.input_size / 2), kernel_size=3,
-                                            stride=stride)
+        self.deconv1_1 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size), out_channels=int(self.input_size / 2), kernel_size=3, stride=stride)
         self.bn1_1 = nn.BatchNorm1d(int(self.input_size / 2))
-        self.deconv1_2 = nn.ConvTranspose1d(in_channels=int(self.input_size / 2), out_channels=int(self.input_size / 2), kernel_size=3,
-                                            stride=stride)
+        self.deconv1_2 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 2), out_channels=int(self.input_size / 2), kernel_size=3, stride=stride)
         self.bn1_2 = nn.BatchNorm1d(int(self.input_size / 2))
-        self.deconv1_3 = nn.ConvTranspose1d(in_channels=int(self.input_size / 2), out_channels=int(self.output_size), kernel_size=3,
-                                            stride=1, padding=1)
-
-        self.deconv2_1 = nn.ConvTranspose1d(in_channels=int(self.input_size / 2), out_channels=int(self.input_size / 4), kernel_size=3,
-                                            stride=stride)
+        self.deconv1_3 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 2), out_channels=int(self.output_size), kernel_size=3, stride=1, padding=1)
+        self.deconv2_1 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 2), out_channels=int(self.input_size / 4), kernel_size=3, stride=stride)
         self.bn2_1 = nn.BatchNorm1d(int(self.input_size / 4))
-        self.deconv2_2 = nn.ConvTranspose1d(in_channels=int(self.input_size / 4), out_channels=int(self.input_size / 4), kernel_size=3,
-                                            stride=stride)
+        self.deconv2_2 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 4), out_channels=int(self.input_size / 4), kernel_size=3, stride=stride)
         self.bn2_2 = nn.BatchNorm1d(int(self.input_size / 4))
-        self.deconv2_3 = nn.ConvTranspose1d(in_channels=int(self.input_size / 4), out_channels=int(self.output_size), kernel_size=3,
-                                            stride=1, padding=1)
-
-        self.deconv3_1 = nn.ConvTranspose1d(in_channels=int(self.input_size / 4), out_channels=int(self.input_size / 8), kernel_size=3,
-                                            stride=stride)
+        self.deconv2_3 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 4), out_channels=int(self.output_size), kernel_size=3, stride=1, padding=1)
+        self.deconv3_1 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 4), out_channels=int(self.input_size / 8), kernel_size=3, stride=stride)
         self.bn3_1 = nn.BatchNorm1d(int(self.input_size / 8))
-        self.deconv3_2 = nn.ConvTranspose1d(in_channels=int(self.input_size / 8), out_channels=int(self.input_size / 8), kernel_size=3,
-                                            stride=stride)
+        self.deconv3_2 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 8), out_channels=int(self.input_size / 8), kernel_size=3, stride=stride)
         self.bn3_2 = nn.BatchNorm1d(int(self.input_size / 8))
-        self.deconv3_3 = nn.ConvTranspose1d(in_channels=int(self.input_size / 8), out_channels=int(self.output_size), kernel_size=3,
-                                            stride=1, padding=1)
+        self.deconv3_3 = nn.ConvTranspose1d(
+            in_channels=int(self.input_size / 8), out_channels=int(self.output_size), kernel_size=3, stride=1, padding=1)
 
         for m in self.modules():
             if isinstance(m, nn.ConvTranspose1d):
@@ -1110,19 +1306,20 @@ class CNN_decoder(nn.Module):
         #     return nn.Sequential(*layers)
 
 
-class CNN_decoder_share(nn.Module):
+class CNNDecoderShare(nn.Module):
     def __init__(self, input_size, output_size, stride, hops):
-        super(CNN_decoder_share, self).__init__()
+        super(CNNDecoderShare, self).__init__()
 
         self.input_size = input_size
         self.output_size = output_size
         self.hops = hops
 
         self.relu = nn.ReLU()
-        self.deconv = nn.ConvTranspose1d(in_channels=int(self.input_size), out_channels=int(self.input_size), kernel_size=3, stride=stride)
+        self.deconv = nn.ConvTranspose1d(
+            in_channels=int(self.input_size), out_channels=int(self.input_size), kernel_size=3, stride=stride)
         self.bn = nn.BatchNorm1d(int(self.input_size))
-        self.deconv_out = nn.ConvTranspose1d(in_channels=int(self.input_size), out_channels=int(self.output_size), kernel_size=3, stride=1,
-                                             padding=1)
+        self.deconv_out = nn.ConvTranspose1d(
+            in_channels=int(self.input_size), out_channels=int(self.output_size), kernel_size=3, stride=1, padding=1)
 
         for m in self.modules():
             if isinstance(m, nn.ConvTranspose1d):
@@ -1135,7 +1332,6 @@ class CNN_decoder_share(nn.Module):
 
     def forward(self, x):
         """
-
         :param
         x: batch * channel * length
         :return:
@@ -1178,22 +1374,22 @@ class CNN_decoder_share(nn.Module):
         return x_hop1, x_hop2, x_hop3
 
 
-class CNN_decoder_attention(nn.Module):
+class CNNDecoderAttention(nn.Module):
     def __init__(self, input_size, output_size, stride=2):
 
-        super(CNN_decoder_attention, self).__init__()
+        super(CNNDecoderAttention, self).__init__()
 
         self.input_size = input_size
         self.output_size = output_size
 
         self.relu = nn.ReLU()
-        self.deconv = nn.ConvTranspose1d(in_channels=int(self.input_size), out_channels=int(self.input_size),
-                                         kernel_size=3, stride=stride)
+        self.deconv = nn.ConvTranspose1d(
+            in_channels=int(self.input_size), out_channels=int(self.input_size), kernel_size=3, stride=stride)
         self.bn = nn.BatchNorm1d(int(self.input_size))
-        self.deconv_out = nn.ConvTranspose1d(in_channels=int(self.input_size), out_channels=int(self.output_size),
-                                             kernel_size=3, stride=1, padding=1)
-        self.deconv_attention = nn.ConvTranspose1d(in_channels=int(self.input_size), out_channels=int(self.input_size),
-                                                   kernel_size=1, stride=1, padding=0)
+        self.deconv_out = nn.ConvTranspose1d(
+            in_channels=int(self.input_size), out_channels=int(self.output_size), kernel_size=3, stride=1, padding=1)
+        self.deconv_attention = nn.ConvTranspose1d(
+            in_channels=int(self.input_size), out_channels=int(self.input_size), kernel_size=1, stride=1, padding=0)
         self.bn_attention = nn.BatchNorm1d(int(self.input_size))
         self.relu_leaky = nn.LeakyReLU(0.2)
 
@@ -1208,7 +1404,6 @@ class CNN_decoder_attention(nn.Module):
 
     def forward(self, x):
         """
-
         :param
         x: batch * channel * length
         :return:
@@ -1226,8 +1421,7 @@ class CNN_decoder_attention(nn.Module):
         x_hop1_attention = self.deconv_attention(x)
         # x_hop1_attention = self.bn_attention(x_hop1_attention)
         x_hop1_attention = self.relu(x_hop1_attention)
-        x_hop1_attention = torch.matmul(x_hop1_attention,
-                                        x_hop1_attention.view(-1, x_hop1_attention.size(2), x_hop1_attention.size(1)))
+        x_hop1_attention = torch.matmul(x_hop1_attention, x_hop1_attention.view(-1, x_hop1_attention.size(2), x_hop1_attention.size(1)))
         # x_hop1_attention_sum = torch.norm(x_hop1_attention, 2, dim=1, keepdim=True)
         # x_hop1_attention = x_hop1_attention/x_hop1_attention_sum
 
@@ -1266,13 +1460,11 @@ class CNN_decoder_attention(nn.Module):
         x_hop3_attention = self.deconv_attention(x)
         # x_hop3_attention = self.bn_attention(x_hop3_attention)
         x_hop3_attention = self.relu(x_hop3_attention)
-        x_hop3_attention = torch.matmul(x_hop3_attention,
-                                        x_hop3_attention.view(-1, x_hop3_attention.size(2), x_hop3_attention.size(1)))
+        x_hop3_attention = torch.matmul(x_hop3_attention, x_hop3_attention.view(-1, x_hop3_attention.size(2), x_hop3_attention.size(1)))
         # x_hop3_attention_sum = torch.norm(x_hop3_attention, 2, dim=1, keepdim=True)
         # x_hop3_attention = x_hop3_attention / x_hop3_attention_sum
 
         # print(x_hop3.size())
-
         return x_hop1, x_hop2, x_hop3, x_hop1_attention, x_hop2_attention, x_hop3_attention
 
 
@@ -1281,13 +1473,14 @@ class CNN_decoder_attention(nn.Module):
 # decoder = CNN_decoder(256, 16).cuda()
 # y = decoder(x)
 
-class Graphsage_Encoder(nn.Module):
-    def __init__(self, feature_size, input_size, layer_num):
-        super(Graphsage_Encoder, self).__init__()
+class GraphsageEncoder(nn.Module):
+    def __init__(self, feature_size, input_size, layer_num, device='cpu'):
+        super(GraphsageEncoder, self).__init__()
 
         self.linear_projection = nn.Linear(feature_size, input_size)
 
         self.input_size = input_size
+        self.device = device
 
         # linear for hop 3
         self.linear_3_0 = nn.Linear(input_size * (2 ** 0), input_size * (2 ** 1))
@@ -1334,7 +1527,8 @@ class Graphsage_Encoder(nn.Module):
         """
         # 3-hop feature
         # nodes original features to representations
-        nodes_list[0] = Variable(nodes_list[0])  # .cuda()
+        nodes_list[0] = Variable(nodes_list[0]).to(self.device)
+        # nodes_list[0] = Variable(nodes_list[0]).cuda()
         nodes_list[0] = self.linear_projection(nodes_list[0])
         nodes_features = self.linear_3_0(nodes_list[0])
         nodes_features = self.bn_3_0(nodes_features.view(-1, nodes_features.size(2), nodes_features.size(1)))
@@ -1344,7 +1538,8 @@ class Graphsage_Encoder(nn.Module):
         nodes_count = nodes_count_list[0]
         # print(nodes_count,nodes_count.size())
         # aggregated representations placeholder, feature dim * 2
-        nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2)))  # .cuda()
+        nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2))).to(self.device)
+        # nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2))).cuda()
         i = 0
         for j in range(nodes_count.size(1)):
             # mean pooling for each father node
@@ -1360,7 +1555,8 @@ class Graphsage_Encoder(nn.Module):
         # nodes count from previous hop
         nodes_count = nodes_count_list[1]
         # aggregated representations placeholder, feature dim * 2
-        nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2)))  # .cuda()
+        nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2))).to(self.device)
+        # nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2))).cuda()
         i = 0
         for j in range(nodes_count.size(1)):
             # mean pooling for each father node
@@ -1379,7 +1575,8 @@ class Graphsage_Encoder(nn.Module):
 
         # 2-hop feature
         # nodes original features to representations
-        nodes_list[1] = Variable(nodes_list[1])  # .cuda()
+        nodes_list[1] = Variable(nodes_list[1]).to(self.device)
+        # nodes_list[1] = Variable(nodes_list[1]).cuda()
         nodes_list[1] = self.linear_projection(nodes_list[1])
         nodes_features = self.linear_2_0(nodes_list[1])
         nodes_features = self.bn_2_0(nodes_features.view(-1, nodes_features.size(2), nodes_features.size(1)))
@@ -1388,7 +1585,8 @@ class Graphsage_Encoder(nn.Module):
         # nodes count from previous hop
         nodes_count = nodes_count_list[1]
         # aggregated representations placeholder, feature dim * 2
-        nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2)))  # .cuda()
+        nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2))).to(self.device)
+        # nodes_features_farther = Variable(torch.Tensor(nodes_features.size(0), nodes_count.size(1), nodes_features.size(2))).cuda()
         i = 0
         for j in range(nodes_count.size(1)):
             # mean pooling for each father node
@@ -1406,7 +1604,8 @@ class Graphsage_Encoder(nn.Module):
 
         # 1-hop feature
         # nodes original features to representations
-        nodes_list[2] = Variable(nodes_list[2])  # .cuda()
+        nodes_list[2] = Variable(nodes_list[2]).to(self.device)
+        # nodes_list[2] = Variable(nodes_list[2]).cuda()
         nodes_list[2] = self.linear_projection(nodes_list[2])
         nodes_features = self.linear_1_0(nodes_list[2])
         nodes_features = self.bn_1_0(nodes_features.view(-1, nodes_features.size(2), nodes_features.size(1)))
@@ -1417,7 +1616,8 @@ class Graphsage_Encoder(nn.Module):
         # print(nodes_features_hop_1.size())
 
         # own feature
-        nodes_list[3] = Variable(nodes_list[3])  # .cuda()
+        nodes_list[3] = Variable(nodes_list[3]).to(self.device)
+        # nodes_list[3] = Variable(nodes_list[3]).cuda()
         nodes_list[3] = self.linear_projection(nodes_list[3])
         nodes_features = self.linear_0_0(nodes_list[3])
         nodes_features = self.bn_0_0(nodes_features.view(-1, nodes_features.size(2), nodes_features.size(1)))
