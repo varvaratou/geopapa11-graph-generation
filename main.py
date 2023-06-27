@@ -9,6 +9,7 @@ from random import shuffle
 from tensorboard_logger import configure
 
 import create_graphs
+from build_dataset import construct_graphs
 from args import Args
 from data import GraphSequenceSamplerPytorchNobfs, GraphSequenceSamplerPytorchCanonical, GraphSequenceSamplerPytorch
 from model import GRUPlain, MLPVAEConditionalPlain, MLPPlain, LSTMPlain
@@ -58,7 +59,10 @@ if __name__ == '__main__':
     # fname_test = dir_input + args.note + '_' + args.graph_type + '_' + str(args.num_layers) + '_' + str(
     #     args.hidden_size_rnn) + '_test_' + str(0) + '.dat'
     # graphs = load_graph_list(fname_test, is_real=True)
-    graphs = create_graphs.create(args)
+    if args.graph_type == 'dynamo':
+        graphs, num_node_labels = construct_graphs(args)
+    else:
+        graphs = create_graphs.create(args)
 
     graphs = graphs[:12]
 
