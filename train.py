@@ -272,8 +272,8 @@ def train_mlp_epoch(epoch, args, rnn, output, data_loader, optim_rnn, optim_outp
             y_node_labels_unsorted = data['y_node_labels']
             x_node_labels_unsorted = x_node_labels_unsorted[:, 0:y_len_max]
             y_node_labels_unsorted = y_node_labels_unsorted[:, 0:y_len_max]
-            x_node_labels = Variable(torch.index_select(x_node_labels_unsorted, 0, sort_index)).to(device)
-            y_node_labels = Variable(torch.index_select(y_node_labels_unsorted, 0, sort_index)).to(device)
+            x_node_labels = Variable(torch.index_select(x_node_labels_unsorted, 0, sort_index)).to(device=device)
+            y_node_labels = Variable(torch.index_select(y_node_labels_unsorted, 0, sort_index)).to(device=device, dtype=torch.long)
 
             if not isinstance(output, dict):
                 raise ValueError('We need two output heads. One for graph structure and another for node labels.')
@@ -808,7 +808,7 @@ def train_rnn_epoch(epoch, args, rnn, output, data_loader, optim_rnn, optim_outp
             x_node_labels_unsorted = x_node_labels_unsorted[:, 0:y_len_max]
             y_node_labels_unsorted = y_node_labels_unsorted[:, 0:y_len_max]
             x_node_labels = Variable(torch.index_select(x_node_labels_unsorted, 0, sort_index)).to(device)
-            y_node_labels = Variable(torch.index_select(y_node_labels_unsorted, 0, sort_index)).to(device)
+            y_node_labels = Variable(torch.index_select(y_node_labels_unsorted, 0, sort_index)).to(device=device, dtype=torch.long)
 
             if not isinstance(output, dict):
                 raise ValueError('We need two output heads. One for graph structure and another for node labels.')

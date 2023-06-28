@@ -12,8 +12,8 @@ class Args:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         # Which GraphRNN model variant is used.
-        self.note = 'GraphRNN_MLP'  # the simple version of Graph RNN
-        # self.note = 'GraphRNN_RNN'  # the dependent Bernoulli sequence version of GraphRNN
+        #self.note = 'GraphRNN_MLP'  # the simple version of Graph RNN
+        self.note = 'GraphRNN_RNN'  # the dependent Bernoulli sequence version of GraphRNN
 
         # for comparison, removing the BFS component
         # self.note = 'GraphRNN_MLP_nobfs'
@@ -50,7 +50,7 @@ class Args:
 
         # This argument controls whether there are nodes of different types or just one (in that case it is set to None)
         # Set it to something other than None, if there is more than one type of nodes
-        self.vocab_size_node_label = None  # 10  # None, 10
+        self.vocab_size_node_label = 10  # None, 10
 
         # network config
         # GraphRNN
